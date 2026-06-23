@@ -180,3 +180,32 @@ Reporting/AdminBackoffice Bicep + helm (v0.10.0); docs polish + prod-readiness s
 
 **P4 — end-to-end:** run the existing Playwright `customer-journey.spec.ts` (add→checkout→order→SignalR)
 against the live Aspire/compose stack as a release gate.
+
+---
+
+## 7. Live-run readiness — findings from a P4 boot attempt (2026-06-24)
+
+A real attempt to boot the full Aspire stack headlessly (for the live E2E) surfaced **four genuine
+run-ergonomics defects** that block any fresh/CI boot. Two are fixed; two need a focused AppHost change.
+
+1. **AppHost has no `launchSettings.json`** → plain `dotnet run` crashes immediately
+   (`OptionsValidationException: ASPNETCORE_URLS / ASPIRE_DASHBOARD_OTLP_ENDPOINT_URL not set`).
+   **FIXED** — added `src/AspireAppHost/FreshCart.AppHost/Properties/launchSettings.json` (dashboard URLs,
+   OTLP endpoints, `ASPNETCORE_ENVIRONMENT=Development`).
+2. **Services can't start outside Development** because the secrets hardening moved `Jwt:SigningKey` to
+   `appsettings.Development.json`; if the AppHost runs children in Production the key is missing and every
+   service throws on startup. **FIXED for local** by the launchSettings `ASPNETCORE_ENVIRONMENT=Development`
+   (children inherit it). For non-Development environments the key must come from env/Key Vault.
+3. **Aspire persistent-container password drift** — `AddSqlServer`/`AddPostgres`/`AddMySql`/`AddRabbitMQ`
+   mint a *random* password each run, but `WithDataVolume()` + `ContainerLifetime.Persistent` reuse the
+   container, so a second run's password no longer matches (`Login failed for user 'sa': Password did not
+   match`). **NEEDS FIX**: pass a stable `AddParameter(..., secret: true)` password to each backing service.
+4. **Databases are not created on fresh volumes** — services that self-migrate on startup (Ordering,
+   Inventory) survive, but those that assume a pre-existing database (Identity, Payment, and the Marten
+   Postgres stores Catalog/Basket) crash with `Failed to open the explicitly specified database '…'`.
+   **NEEDS FIX**: ensure every service creates/migrates its database on startup, or add Aspire
+   `WithCreationScript` per database so a clean environment provisions them.
+
+**To make the live E2E (and CI) reproducible**, do (3) + (4) as one focused AppHost-hardening change, then
+the existing `customer-journey.spec.ts` can run against `dotnet run` + `ng serve`. The verified state of the
+codebase (0 errors/0 warnings/804 tests) is unaffected by these run-only findings.

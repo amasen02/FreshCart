@@ -69,6 +69,16 @@ walkable end-to-end.
   `MERGE ... WHEN NOT MATCHED`) and `IStockLevelService.EnsureStockItemAsync` seed the row only on first
   sight; the consumer now uses them, and the destructive `SetStockLevel` is reserved for the admin PUT.
 
+### Fixed
+
+- **AppHost is now runnable headlessly.** Added the missing
+  `src/AspireAppHost/FreshCart.AppHost/Properties/launchSettings.json`; without it a plain
+  `dotnet run` on the AppHost crashed immediately (`ASPNETCORE_URLS` / `ASPIRE_DASHBOARD_OTLP_ENDPOINT_URL`
+  not set) and child services started outside Development (so the dev `Jwt:SigningKey` was missing). The
+  profile sets the dashboard URLs, OTLP endpoints and `ASPNETCORE_ENVIRONMENT=Development`. Two further
+  live-boot blockers (Aspire persistent-container password drift; databases not provisioned on fresh
+  volumes) are documented with the required fix in `docs/google-standards-audit-2026-06-23.md` §7.
+
 ### Planned &mdash; future phases
 
 - **v0.9.0** &mdash; AdminBackoffice modular monolith (`IModule` pattern) and the Angular 20
