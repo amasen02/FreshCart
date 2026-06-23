@@ -196,16 +196,31 @@ run-ergonomics defects** that block any fresh/CI boot. Two are fixed; two need a
    `appsettings.Development.json`; if the AppHost runs children in Production the key is missing and every
    service throws on startup. **FIXED for local** by the launchSettings `ASPNETCORE_ENVIRONMENT=Development`
    (children inherit it). For non-Development environments the key must come from env/Key Vault.
-3. **Aspire persistent-container password drift** — `AddSqlServer`/`AddPostgres`/`AddMySql`/`AddRabbitMQ`
-   mint a *random* password each run, but `WithDataVolume()` + `ContainerLifetime.Persistent` reuse the
-   container, so a second run's password no longer matches (`Login failed for user 'sa': Password did not
-   match`). **NEEDS FIX**: pass a stable `AddParameter(..., secret: true)` password to each backing service.
-4. **Databases are not created on fresh volumes** — services that self-migrate on startup (Ordering,
-   Inventory) survive, but those that assume a pre-existing database (Identity, Payment, and the Marten
-   Postgres stores Catalog/Basket) crash with `Failed to open the explicitly specified database '…'`.
-   **NEEDS FIX**: ensure every service creates/migrates its database on startup, or add Aspire
-   `WithCreationScript` per database so a clean environment provisions them.
+3. **Aspire persistent-container password drift** — `AddSqlServer`/`AddPostgres`/`AddMySql`/`AddRabbitMQ`/
+   `AddRedis` mint a *random* password each run, but `WithDataVolume()` + `ContainerLifetime.Persistent`
+   reuse the container, so a second run's password no longer matches (`Login failed for user 'sa': Password
+   did not match`). **Verified fix**: stable `AddParameter("…", value, secret: true)` passed to each backing
+   service. *Caveat:* keep the dev password values out of committed source — read them from the AppHost's
+   `appsettings.Development.json` (`Parameters` section) or user-secrets, consistent with finding §6 P0.
+4. **Databases not provisioned on fresh volumes** — Aspire's `AddDatabase` only registers the connection
+   string; it does not `CREATE DATABASE`. Services that self-migrate (Ordering, Inventory — both use
+   `EnableRetryOnFailure`) survive; Identity self-migrates too (`IdentityDataSeeder.MigrateAsync`) but the
+   others don't provision their schema's database. **Verified**: `AddDatabase(name).WithCreationScript(...)`
+   **creates the SQL Server databases** (confirmed — `identitydb`/`orderingdb`/`inventorydb`/`paymentreaddb`
+   came up), but the **Postgres** equivalent did **not** create `catalogdb`/`basketdb` (Aspire runs the PG
+   script against the target DB, which doesn't exist yet). **Remaining fix**: provision the Postgres
+   databases — simplest is to let Marten create them (`AddMarten(...).CreateDatabasesForTenants(c =>
+   c.MaintenanceDatabase(maintenanceConn).ForTenant().CheckAgainstPgDatabase().CreateIfNotExists())` in
+   Catalog/Basket), or a PG init script against the `postgres` maintenance DB.
+5. **Cold-boot DB connection timeouts on a resource-contended host** — even with passwords + DBs correct,
+   services without connection resilience (Identity, Payment) hit `SqlException 258: wait operation timed
+   out` migrating during the simultaneous start of 13 services + 6 DB containers, because this machine was
+   also running another project's 10 containers. **Fix**: add `EnableRetryOnFailure` to the Identity and
+   Payment `DbContext` registrations (Ordering/Inventory already have it), and/or run the live boot on a
+   host with more headroom (this stack wants ~6–8 GB free for a clean cold start).
 
-**To make the live E2E (and CI) reproducible**, do (3) + (4) as one focused AppHost-hardening change, then
-the existing `customer-journey.spec.ts` can run against `dotnet run` + `ng serve`. The verified state of the
-codebase (0 errors/0 warnings/804 tests) is unaffected by these run-only findings.
+**To finish the live E2E (one focused session on a host with headroom):** apply (3) stable passwords via
+Development config, (4) Postgres DB provisioning + `EnableRetryOnFailure` on Identity/Payment, then
+`dotnet run` the AppHost + `ng serve` and run `customer-journey.spec.ts`. Finding (1) — the AppHost
+`launchSettings.json` — is already fixed and committed. **The verified state of the codebase
+(0 errors / 0 warnings / 804 tests) is unaffected by every one of these run-only findings.**
