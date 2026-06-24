@@ -1,17 +1,18 @@
 using System.Net.Security;
 using System.Security.Cryptography.X509Certificates;
 
-namespace FreshCart.Gateway.Yarp.Configuration;
+namespace FreshCart.ServiceDefaults;
 
 /// <summary>
-/// Development-only TLS validation for the internal gateway-to-service hop. Downstream services present
-/// the ASP.NET Core HTTPS development certificate, whose self-signed root is absent from the machine
-/// trust store on a fresh checkout (and <c>dotnet dev-certs --trust</c> needs an interactive prompt).
-/// This accepts that one certificate — identified by the ASP.NET Core development-certificate OID — and
-/// only when the sole chain problem is the untrusted root; every other certificate or error is rejected.
-/// Staging and Production keep full certificate-chain validation against real certificates.
+/// Development-only TLS validation for internal HTTPS hops (gateway-to-service and service-to-service).
+/// Services present the ASP.NET Core HTTPS development certificate, whose self-signed root is absent
+/// from the machine trust store on a fresh checkout (and <c>dotnet dev-certs --trust</c> needs an
+/// interactive prompt). This accepts that one certificate — identified by the ASP.NET Core
+/// development-certificate OID — and only when the sole chain problem is the untrusted root; every
+/// other certificate or error is rejected. Staging and Production keep full chain validation against
+/// real certificates.
 /// </summary>
-internal static class DevelopmentCertificateValidation
+public static class DevelopmentCertificateValidation
 {
     private const string AspNetCoreHttpsDevelopmentCertificateOid = "1.3.6.1.4.1.311.84.1.1";
 

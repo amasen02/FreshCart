@@ -17,10 +17,12 @@ test.describe('Customer happy path — browse, basket, checkout, real-time notif
     await expect(page.getByTestId('basket-line').first()).toBeVisible();
 
     await customerJourney.proceedToCheckout();
-    await customerJourney.fillCheckoutForm(profile);
+    await customerJourney.fillCheckoutForm();
 
-    const confirmedOrderNumber = await customerJourney.expectOrderConfirmation();
-    expect(confirmedOrderNumber).toMatch(/^[A-Z]{2,4}-\d{4}-\d{4,}$/);
+    // Orders are identified by a GUID end to end (the storefront shows it as the order reference);
+    // there is no separate human order-number sequence in the Ordering service.
+    const confirmedOrderReference = await customerJourney.expectOrderConfirmation();
+    expect(confirmedOrderReference).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
 
     await customerJourney.expectRealtimeNotificationToast();
   });

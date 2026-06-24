@@ -57,7 +57,7 @@
         </a>
 
         <div ngbDropdown placement="bottom-end">
-          <button type="button" class="btn btn-outline-secondary" ngbDropdownToggle>
+          <button type="button" class="btn btn-outline-secondary" data-testid="account-menu" ngbDropdownToggle>
             <i class="bi bi-person-circle me-1" aria-hidden="true"></i>
             @if (authStore.isAuthenticated()) {
               {{ authStore.displayName() }}

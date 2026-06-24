@@ -1,3 +1,5 @@
+using System.Security.Claims;
+
 namespace FreshCart.Gateway.Yarp.Auth;
 
 /// <summary>
@@ -13,5 +15,9 @@ public static class DownstreamTokenClaim
 
     public const string DisplayName = "display_name";
 
-    public const string Role = "role";
+    // Roles must use the same claim type the Identity JWT issuer emits (ClaimTypes.Role), because the
+    // services authorize with RequireRole, whose default RoleClaimType is ClaimTypes.Role and which —
+    // unlike the subject/email readers — does not fall back to the short "role" name. Emitting the
+    // short name here previously made every RequireRole check fail (HTTP 403) for browser callers.
+    public const string Role = ClaimTypes.Role;
 }

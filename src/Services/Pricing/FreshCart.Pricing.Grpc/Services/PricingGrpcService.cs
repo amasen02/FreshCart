@@ -10,7 +10,11 @@ namespace FreshCart.Pricing.Grpc.Services;
 /// events: that ceremony would add indirection to the hottest synchronous path in the system
 /// without buying anything.
 /// </summary>
-[Authorize]
+// Anonymous on purpose: this gRPC calculator is internal (never routed through the public gateway),
+// exposes no PII and performs no mutation, and is called both from authenticated request handlers and
+// from the price-changed message consumer — contexts that carry no single common credential. A blanket
+// [Authorize] here required a bearer the Basket caller never sent, which 401'd the integrated price call.
+[AllowAnonymous]
 public sealed class PricingGrpcService(
     BasketPriceCalculator basketPriceCalculator,
     CouponValidator couponValidator) : PricingService.PricingServiceBase

@@ -1,3 +1,4 @@
+using System.Net.Http;
 using HealthChecks.UI.Client;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -36,6 +37,21 @@ public static class HostingExtensions
         {
             httpClientBuilder.AddStandardResilienceHandler();
             httpClientBuilder.AddServiceDiscovery();
+
+            // Internal service-to-service calls run over HTTPS with the ASP.NET Core development
+            // certificate locally; accept it (and only it) on the inner transport in Development so
+            // those hops do not fail with "UntrustedRoot". Production keeps full chain validation.
+            if (hostBuilder.Environment.IsDevelopment())
+            {
+                httpClientBuilder.ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+                {
+                    SslOptions =
+                    {
+                        RemoteCertificateValidationCallback =
+                            DevelopmentCertificateValidation.AcceptAspNetCoreDevelopmentCertificate,
+                    },
+                });
+            }
         });
 
         return hostBuilder;

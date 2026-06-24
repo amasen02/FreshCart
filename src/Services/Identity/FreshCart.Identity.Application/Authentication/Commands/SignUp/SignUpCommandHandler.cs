@@ -59,13 +59,24 @@ public sealed class SignUpCommandHandler(
 
         await RecordSignUpAuditEventAsync(newUser, cancellationToken).ConfigureAwait(false);
 
+        // Surfaced on the result so the API can seed the session cookie with the same roles, otherwise a
+        // just-signed-up browser session carries no role and every RequireRole endpoint returns 403.
+        var assignedRoles = (await userManager.GetRolesAsync(newUser).ConfigureAwait(false)).ToArray();
+
         if (!command.SignInImmediately)
         {
-            return new SignUpResult(newUser.Id, newUser.Email!, newUser.DisplayName, null, null, null);
+            return new SignUpResult(newUser.Id, newUser.Email!, newUser.DisplayName, assignedRoles, null, null, null);
         }
 
-        var assignedRoles = await userManager.GetRolesAsync(newUser).ConfigureAwait(false);
-        var accessToken = accessTokenIssuer.Issue(newUser, assignedRoles.ToArray());
+        return await IssueImmediateCredentialsAsync(newUser, assignedRoles, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<SignUpResult> IssueImmediateCredentialsAsync(
+        ApplicationUser newUser,
+        IReadOnlyList<string> assignedRoles,
+        CancellationToken cancellationToken)
+    {
+        var accessToken = accessTokenIssuer.Issue(newUser, assignedRoles);
         var refreshToken = await refreshTokenService
             .IssueAsync(newUser.Id, currentRequest.IpAddress, currentRequest.UserAgent, cancellationToken)
             .ConfigureAwait(false);
@@ -74,6 +85,7 @@ public sealed class SignUpCommandHandler(
             newUser.Id,
             newUser.Email!,
             newUser.DisplayName,
+            assignedRoles,
             accessToken.AccessToken,
             refreshToken.PlaintextToken,
             accessToken.ExpiresOnUtc);

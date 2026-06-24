@@ -76,7 +76,12 @@ public sealed class AuthenticationEndpoints : ICarterModule
 
         if (signUpRequest.SignInImmediately && signUpRequest.UseCookie)
         {
-            await SignInWithCookieAsync(httpContext, commandResult.UserId, commandResult.Email, commandResult.DisplayName)
+            await SignInWithCookieAsync(
+                    httpContext,
+                    commandResult.UserId,
+                    commandResult.Email,
+                    commandResult.DisplayName,
+                    commandResult.Roles)
                 .ConfigureAwait(false);
             AntiforgeryConfiguration.IssueAntiforgeryCookie(httpContext, antiforgery);
         }

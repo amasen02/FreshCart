@@ -57,7 +57,7 @@
     <div class="row row-cols-2 row-cols-md-3 row-cols-lg-4 g-3">
       @for (product of state.items(); track product.id) {
         <div class="col">
-          <div class="card h-100 shadow-sm">
+          <div class="card h-100 shadow-sm" data-testid="product-card">
             <a [routerLink]="['/product', product.slug]" class="text-decoration-none">
               <img
                 class="card-img-top fc-product-card-img"
@@ -67,7 +67,7 @@
             </a>
             <div class="card-body d-flex flex-column">
               <a [routerLink]="['/product', product.slug]" class="text-decoration-none text-body">
-                <h2 class="h6 card-title">{{ product.name }}</h2>
+                <h2 class="h6 card-title" data-testid="product-name">{{ product.name }}</h2>
               </a>
               <p class="fw-semibold text-primary mb-2">{{ product.basePrice | fcMoney: product.currencyCode }}</p>
               <button

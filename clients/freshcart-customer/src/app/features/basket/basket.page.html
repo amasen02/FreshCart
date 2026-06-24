@@ -28,7 +28,7 @@
             </thead>
             <tbody>
               @for (line of basketStore.items(); track line.productId) {
-                <tr>
+                <tr data-testid="basket-line">
                   <th scope="row" class="fw-normal">
                     <div class="d-flex align-items-center gap-2">
                       <img
@@ -80,7 +80,7 @@
 
         <div class="d-md-none">
           @for (line of basketStore.items(); track line.productId) {
-            <div class="card mb-2">
+            <div class="card mb-2" data-testid="basket-line">
               <div class="card-body">
                 <div class="d-flex justify-content-between">
                   <h2 class="h6 mb-1">{{ line.productName }}</h2>
