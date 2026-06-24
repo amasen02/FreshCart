@@ -62,6 +62,9 @@ secrets.json
 appsettings.Local.json
 appsettings.*.Local.json
 
+# Pricing service embedded SQLite reference DB (generated on first run)
+src/Services/Pricing/FreshCart.Pricing.Grpc/pricing.db
+
 # Azure
 .azure/
 

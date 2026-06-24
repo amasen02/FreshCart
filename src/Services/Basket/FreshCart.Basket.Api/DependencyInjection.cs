@@ -10,6 +10,7 @@ using FreshCart.BuildingBlocks.Messaging.MassTransit;
 using FreshCart.BuildingBlocks.Messaging.Outbox;
 using Marten;
 using MassTransit;
+using Npgsql;
 using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
@@ -25,6 +26,7 @@ namespace FreshCart.Basket.Api;
 public static class DependencyInjection
 {
     private const string BasketDatabaseConnectionName = "basketdb";
+    private const string PostgresMaintenanceDatabaseName = "postgres";
     private const string CacheConnectionName = "cache";
     private const string CatalogBaseAddressConfigurationKey = "Services:Catalog:BaseAddress";
     private const string MessageBrokerHealthCheckName = "rabbitmq";
@@ -61,10 +63,25 @@ public static class DependencyInjection
         var basketConnectionString = configuration.GetConnectionString(BasketDatabaseConnectionName)
             ?? throw new InvalidOperationException($"Connection string \"{BasketDatabaseConnectionName}\" missing.");
 
+        // Aspire registers the connection string but never issues CREATE DATABASE, so Marten provisions
+        // the tenant database itself from a maintenance connection pointed at the always-present
+        // "postgres" database. PersistSecurityInfo keeps the password available to Marten after first open.
+        var maintenanceConnectionString = new NpgsqlConnectionStringBuilder(basketConnectionString)
+        {
+            Database = PostgresMaintenanceDatabaseName,
+            PersistSecurityInfo = true,
+        }.ConnectionString;
+
         services.AddMarten(martenOptions =>
         {
             martenOptions.Connection(basketConnectionString);
             martenOptions.AutoCreateSchemaObjects = AutoCreate.CreateOrUpdate;
+
+            martenOptions.CreateDatabasesForTenants(databaseCreation =>
+            {
+                databaseCreation.MaintenanceDatabase(maintenanceConnectionString);
+                databaseCreation.ForTenant().CheckAgainstPgDatabase();
+            });
 
             // Two tabs, a rapid double-tap or a request racing the price-refresh consumer all
             // read-modify-write the same customer's basket. Optimistic concurrency turns the losing

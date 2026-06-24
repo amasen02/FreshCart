@@ -9,6 +9,7 @@ using JasperFx;
 using Marten;
 using Marten.Schema;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Npgsql;
 
 namespace FreshCart.Catalog.Api;
 
@@ -19,6 +20,7 @@ namespace FreshCart.Catalog.Api;
 public static class DependencyInjection
 {
     private const string CatalogDatabaseConnectionName = "catalogdb";
+    private const string PostgresMaintenanceDatabaseName = "postgres";
     private const string CacheConnectionName = "cache";
     private const string MessageBrokerHealthCheckName = "rabbitmq";
     private const string ReadinessHealthCheckTag = "ready";
@@ -52,11 +54,26 @@ public static class DependencyInjection
         var catalogConnectionString = configuration.GetConnectionString(CatalogDatabaseConnectionName)
             ?? throw new InvalidOperationException($"Connection string \"{CatalogDatabaseConnectionName}\" missing.");
 
+        // Aspire registers the connection string but never issues CREATE DATABASE, so Marten provisions
+        // the tenant database itself from a maintenance connection pointed at the always-present
+        // "postgres" database. PersistSecurityInfo keeps the password available to Marten after first open.
+        var maintenanceConnectionString = new NpgsqlConnectionStringBuilder(catalogConnectionString)
+        {
+            Database = PostgresMaintenanceDatabaseName,
+            PersistSecurityInfo = true,
+        }.ConnectionString;
+
         services.AddMarten(martenOptions =>
         {
             martenOptions.Connection(catalogConnectionString);
             martenOptions.AutoCreateSchemaObjects = AutoCreate.CreateOrUpdate;
             martenOptions.UseSystemTextJsonForSerialization();
+
+            martenOptions.CreateDatabasesForTenants(databaseCreation =>
+            {
+                databaseCreation.MaintenanceDatabase(maintenanceConnectionString);
+                databaseCreation.ForTenant().CheckAgainstPgDatabase();
+            });
 
             martenOptions.Schema.For<Product>()
                 .UniqueIndex(UniqueIndexType.Computed, product => product.Sku)
