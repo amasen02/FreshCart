@@ -10,7 +10,6 @@ namespace FreshCart.Reporting.Application.Projections.Consumers;
 /// the read warehouse, reducing net revenue on the affected sales fact.
 /// </summary>
 public sealed partial class OrderRefundedProjectionConsumer(
-    IProjectionInbox projectionInbox,
     IProjectionWriter projectionWriter,
     ILogger<OrderRefundedProjectionConsumer> logger)
     : IConsumer<OrderRefundedIntegrationEvent>
@@ -19,23 +18,15 @@ public sealed partial class OrderRefundedProjectionConsumer(
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        var alreadyProcessed = await projectionInbox
-            .HasProcessedAsync(context.Message.EventId, context.CancellationToken)
+        var applied = await projectionWriter
+            .ApplyOrderRefundedAsync(context.Message, context.CancellationToken)
             .ConfigureAwait(false);
 
-        if (alreadyProcessed)
+        if (!applied)
         {
             LogSkippingAlreadyProcessedEvent(context.Message.EventId);
             return;
         }
-
-        await projectionWriter
-            .ApplyOrderRefundedAsync(context.Message, context.CancellationToken)
-            .ConfigureAwait(false);
-
-        await projectionInbox
-            .RecordProcessedAsync(context.Message.EventId, context.CancellationToken)
-            .ConfigureAwait(false);
 
         LogProjectedOrderRefunded(
             context.Message.OrderId,

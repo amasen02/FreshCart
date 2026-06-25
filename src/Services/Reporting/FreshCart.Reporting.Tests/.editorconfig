@@ -1,0 +1,8 @@
+[*.cs]
+# xUnit forbids ConfigureAwait(false) in test methods (xUnit1030), which directly contradicts
+# Meziantou MA0004. Test code follows the xUnit rule, so MA0004 is disabled for this test project only.
+dotnet_diagnostic.MA0004.severity = none
+
+# xUnit collection-definition marker types conventionally end in "Collection"; CA1711 only applies to
+# the test fixture plumbing, not production code.
+dotnet_diagnostic.CA1711.severity = none

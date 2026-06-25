@@ -182,6 +182,7 @@
     <PackageVersion Include="Testcontainers.Redis" Version="4.0.0" />
     <PackageVersion Include="Testcontainers.RabbitMq" Version="4.0.0" />
     <PackageVersion Include="Testcontainers.MongoDb" Version="4.0.0" />
+    <PackageVersion Include="Testcontainers.MySql" Version="4.0.0" />
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.9" />
     <PackageVersion Include="coverlet.collector" Version="6.0.2" />
     <PackageVersion Include="WireMock.Net" Version="1.6.10" />

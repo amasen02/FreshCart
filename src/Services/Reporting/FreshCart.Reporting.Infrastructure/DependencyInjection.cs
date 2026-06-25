@@ -60,7 +60,6 @@ public static class DependencyInjection
         services.AddScoped<ICustomerReadWarehouse, DapperCustomerReadWarehouse>();
         services.AddScoped<IDeliveryReadWarehouse, DapperDeliveryReadWarehouse>();
         services.AddScoped<IProjectionWriter, WarehouseProjectionWriter>();
-        services.AddScoped<IProjectionInbox, EntityFrameworkProjectionInbox>();
     }
 
     private static void AddBlobStorage(IServiceCollection services, IConfiguration configuration)

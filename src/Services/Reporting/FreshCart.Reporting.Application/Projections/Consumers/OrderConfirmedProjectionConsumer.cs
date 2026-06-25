@@ -10,7 +10,6 @@ namespace FreshCart.Reporting.Application.Projections.Consumers;
 /// the read warehouse: daily sales snapshot, product leaderboard counters and customer lifetime value.
 /// </summary>
 public sealed partial class OrderConfirmedProjectionConsumer(
-    IProjectionInbox projectionInbox,
     IProjectionWriter projectionWriter,
     ILogger<OrderConfirmedProjectionConsumer> logger)
     : IConsumer<OrderConfirmedIntegrationEvent>
@@ -19,23 +18,15 @@ public sealed partial class OrderConfirmedProjectionConsumer(
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        var alreadyProcessed = await projectionInbox
-            .HasProcessedAsync(context.Message.EventId, context.CancellationToken)
+        var applied = await projectionWriter
+            .ApplyOrderConfirmedAsync(context.Message, context.CancellationToken)
             .ConfigureAwait(false);
 
-        if (alreadyProcessed)
+        if (!applied)
         {
             LogSkippingAlreadyProcessedEvent(context.Message.EventId);
             return;
         }
-
-        await projectionWriter
-            .ApplyOrderConfirmedAsync(context.Message, context.CancellationToken)
-            .ConfigureAwait(false);
-
-        await projectionInbox
-            .RecordProcessedAsync(context.Message.EventId, context.CancellationToken)
-            .ConfigureAwait(false);
 
         LogProjectedOrderConfirmed(
             context.Message.OrderId,
