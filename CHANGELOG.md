@@ -52,8 +52,15 @@ walkable end-to-end.
   reporting route. `StreamPdfAsync` also passed the raw route value straight into the blob path; it now
   validates via `InvoiceNumber.TryParse` and addresses the blob with the normalised `parsed.Value`,
   returning 400 on malformed input.
+- **CustomerSupport endpoint authorization coverage (CS-002).** The support read endpoints carried the
+  role policies and the participant (BOLA) guard but had no host-level tests proving them. Added a
+  `WebApplicationFactory`-based suite that boots the API in-process with the in-memory repositories (no
+  live Mongo/Redis) and asserts the boundary: unauthenticated &rarr; 401; a customer sees only their own
+  open session; an agent sees their active sessions; a customer cannot read another customer's transcript
+  (403) while a participant or an administrator can; an unknown session &rarr; 404; and only back-office
+  staff can browse the full session list (customer &rarr; 403). Test-only; no production change.
 - Verified: full solution builds with 0 errors; the entire test suite is green &mdash;
-  Basket 92, Catalog 155, Payment 85, Ordering 71, Delivery 56, Reviews 53, CustomerSupport 46,
+  Basket 92, Catalog 155, Payment 85, Ordering 71, Delivery 56, Reviews 53, CustomerSupport 56,
   Pricing 47, Notification 42, Identity 40, Gateway 38, BuildingBlocks 46, Reporting 42, Inventory 7.
 
 ### Reliability
