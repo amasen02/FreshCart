@@ -64,8 +64,30 @@ var reportingWarehouse = mysql.AddDatabase("reportingdb");
 
 // --- Document store ---------------------------------------------------------
 
+// Delivery's transactional outbox and Payment's atomic event+projection append commit across two
+// collections in one MongoDB transaction, which a standalone mongod rejects. Aspire's AddMongoDB starts a
+// standalone (with auth) and has no replica-set switch, so the container is run as a single-node replica
+// set: a wrapper entrypoint generates the keyfile internal auth requires, hands off to the stock entrypoint
+// (which still creates the admin user) with --replSet + --keyFile, and a backgrounded task runs rs.initiate
+// once mongod answers — idempotent, since rs.status throws only until the set is initiated, so a restart
+// against the persisted volume re-initiates nothing. The single member advertises the container-internal
+// host, so service processes connect with directConnection=true (see ReferenceMongoDatabase) and use the
+// seed they are given instead of resolving that host. The script is one line so the C# source's line
+// endings can never put a stray carriage return into the shell command. Verified end-to-end against the
+// mongo:7 image (fresh init, persistent-volume restart, and a committed multi-document transaction).
+const string MongoReplicaSetInitScript =
+    """KEYFILE=/data/configdb/replica-set.key; if [ ! -f "$KEYFILE" ]; then openssl rand -base64 756 > "$KEYFILE"; chmod 400 "$KEYFILE"; chown mongodb:mongodb "$KEYFILE"; fi; ( until mongosh --quiet -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --eval "db.adminCommand({ping:1}).ok" >/dev/null 2>&1; do sleep 0.5; done; mongosh --quiet -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --eval 'try { rs.status().ok } catch (e) { rs.initiate({_id:"rs0",members:[{_id:0,host:"127.0.0.1:27017"}]}) }' ) & exec docker-entrypoint.sh mongod --replSet rs0 --keyFile "$KEYFILE" --bind_ip_all""";
+
 var mongo = distributedApplicationBuilder
     .AddMongoDB("mongodb")
+    .WithEntrypoint("/bin/bash")
+    .WithArgs(context =>
+    {
+        context.Args.Clear();
+        context.Args.Add("-c");
+        context.Args.Add(MongoReplicaSetInitScript);
+        return Task.CompletedTask;
+    })
     .WithDataVolume()
     .WithLifetime(ContainerLifetime.Persistent);
 
@@ -98,6 +120,21 @@ IResourceBuilder<ProjectResource> ReferenceMessageBroker(IResourceBuilder<Projec
         .WithEnvironment("MessageBroker__UserName", messageBrokerUserName)
         .WithEnvironment("MessageBroker__Password", messageBrokerPassword)
         .WaitFor(rabbitMq);
+
+// Wires a service to one of the MongoDB databases on the single-node replica set. directConnection=true is
+// appended so the driver connects straight to the seed Aspire publishes (a random host port) and treats it
+// as the primary, instead of doing replica-set discovery toward the container-internal member host it
+// cannot reach. It is joined with & because Aspire's connection string already carries an auth query
+// string (?authSource=admin&...). This sets the ConnectionStrings__<name> the service reads, so a separate
+// WithReference is unnecessary.
+IResourceBuilder<ProjectResource> ReferenceMongoDatabase(
+    IResourceBuilder<ProjectResource> service,
+    IResourceBuilder<MongoDBDatabaseResource> database) =>
+    service
+        .WithEnvironment(
+            $"ConnectionStrings__{database.Resource.Name}",
+            ReferenceExpression.Create($"{database.Resource.ConnectionStringExpression}&directConnection=true"))
+        .WaitFor(database);
 
 // --- Services ---------------------------------------------------------------
 
@@ -133,46 +170,46 @@ var inventoryService = ReferenceMessageBroker(distributedApplicationBuilder
 // Payment is reached only over internal REST from Ordering, never through the
 // public gateway, and returns capture/refund outcomes synchronously in the HTTP
 // response, so its handle is not captured and it binds no broker.
-distributedApplicationBuilder
-    .AddProject<Projects.FreshCart_Payment_Api>("payment")
-    .WithReference(paymentReadDatabase)
-    .WithReference(paymentEventStore)
-    .WaitFor(paymentReadDatabase)
-    .WaitFor(paymentEventStore);
+ReferenceMongoDatabase(
+    distributedApplicationBuilder
+        .AddProject<Projects.FreshCart_Payment_Api>("payment")
+        .WithReference(paymentReadDatabase)
+        .WaitFor(paymentReadDatabase),
+    paymentEventStore);
 
 var orderingService = ReferenceMessageBroker(distributedApplicationBuilder
     .AddProject<Projects.FreshCart_Ordering_Api>("ordering")
     .WithReference(orderingDatabase)
     .WaitFor(orderingDatabase));
 
-var deliveryService = ReferenceMessageBroker(distributedApplicationBuilder
-    .AddProject<Projects.FreshCart_Delivery_Api>("delivery")
-    .WithReference(deliveryDatabase)
-    .WaitFor(deliveryDatabase));
+var deliveryService = ReferenceMongoDatabase(
+    ReferenceMessageBroker(distributedApplicationBuilder
+        .AddProject<Projects.FreshCart_Delivery_Api>("delivery")),
+    deliveryDatabase);
 
-var notificationService = ReferenceMessageBroker(distributedApplicationBuilder
-    .AddProject<Projects.FreshCart_Notification_Api>("notification")
-    .WithReference(notificationsDatabase)
-    .WithReference(distributedCache)
-    .WaitFor(notificationsDatabase)
-    .WaitFor(distributedCache));
+var notificationService = ReferenceMongoDatabase(
+    ReferenceMessageBroker(distributedApplicationBuilder
+        .AddProject<Projects.FreshCart_Notification_Api>("notification")
+        .WithReference(distributedCache)
+        .WaitFor(distributedCache)),
+    notificationsDatabase);
 
 var reportingService = ReferenceMessageBroker(distributedApplicationBuilder
     .AddProject<Projects.FreshCart_Reporting_Api>("reporting")
     .WithReference(reportingWarehouse)
     .WaitFor(reportingWarehouse));
 
-var customerSupportService = distributedApplicationBuilder
-    .AddProject<Projects.FreshCart_CustomerSupport_Api>("customersupport")
-    .WithReference(supportChatTranscripts)
-    .WithReference(distributedCache)
-    .WaitFor(supportChatTranscripts)
-    .WaitFor(distributedCache);
+var customerSupportService = ReferenceMongoDatabase(
+    distributedApplicationBuilder
+        .AddProject<Projects.FreshCart_CustomerSupport_Api>("customersupport")
+        .WithReference(distributedCache)
+        .WaitFor(distributedCache),
+    supportChatTranscripts);
 
-var reviewsService = ReferenceMessageBroker(distributedApplicationBuilder
-    .AddProject<Projects.FreshCart_Reviews_Api>("reviews")
-    .WithReference(reviewsDatabase)
-    .WaitFor(reviewsDatabase));
+var reviewsService = ReferenceMongoDatabase(
+    ReferenceMessageBroker(distributedApplicationBuilder
+        .AddProject<Projects.FreshCart_Reviews_Api>("reviews")),
+    reviewsDatabase);
 
 // The gateway is the single public ingress. It needs the shared Redis key ring
 // for the BFF cookie exchange and a reference to every downstream cluster so
