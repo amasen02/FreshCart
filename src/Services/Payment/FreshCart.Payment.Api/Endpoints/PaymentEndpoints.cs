@@ -76,10 +76,17 @@ public sealed class PaymentEndpoints : ICarterModule
     private static async Task<IResult> RefundPaymentAsync(
         Guid paymentId,
         RefundPaymentRequest refundRequest,
+        HttpContext httpContext,
         ISender mediator,
         CancellationToken cancellationToken)
     {
-        var command = new RefundPaymentCommand(paymentId, refundRequest.Amount, refundRequest.Reason);
+        var idempotencyKey = httpContext.Request.Headers[IdempotencyKeyHeaderName].ToString();
+        if (string.IsNullOrWhiteSpace(idempotencyKey))
+        {
+            throw new BadRequestException($"The {IdempotencyKeyHeaderName} header is required.");
+        }
+
+        var command = new RefundPaymentCommand(paymentId, refundRequest.Amount, refundRequest.Reason, idempotencyKey);
         var commandResult = await mediator.Send(command, cancellationToken).ConfigureAwait(false);
         return Results.Ok(RefundResultDto.FromCommandResult(commandResult));
     }

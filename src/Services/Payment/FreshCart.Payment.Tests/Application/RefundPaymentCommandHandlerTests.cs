@@ -24,6 +24,7 @@ public sealed class RefundPaymentCommandHandlerTests
     private const string CardMethod = "card";
     private const string ProviderReference = "SIM-TEST-REFERENCE";
     private const string RefundReason = "Damaged item reported by the customer.";
+    private const string RefundIdempotencyKey = "88888888-8888-8888-8888-888888888888";
     private const string ProviderRejectionReason = "The settlement window for this transaction has closed.";
 
     private readonly IPaymentEventStore _paymentEventStore = Substitute.For<IPaymentEventStore>();
@@ -64,7 +65,7 @@ public sealed class RefundPaymentCommandHandlerTests
         ProviderApprovesRefund(30.00m);
 
         var refundResult = await _commandHandler.Handle(
-            new RefundPaymentCommand(PaymentId, 30.00m, RefundReason), CancellationToken.None);
+            new RefundPaymentCommand(PaymentId, 30.00m, RefundReason, RefundIdempotencyKey), CancellationToken.None);
 
         refundResult.PaymentId.Should().Be(PaymentId);
         refundResult.OrderId.Should().Be(OrderId);
@@ -90,7 +91,7 @@ public sealed class RefundPaymentCommandHandlerTests
         ProviderApprovesRefund(CapturedAmount);
 
         var refundResult = await _commandHandler.Handle(
-            new RefundPaymentCommand(PaymentId, CapturedAmount, RefundReason), CancellationToken.None);
+            new RefundPaymentCommand(PaymentId, CapturedAmount, RefundReason, RefundIdempotencyKey), CancellationToken.None);
 
         refundResult.Status.Should().Be(PaymentStatus.Refunded);
         refundResult.RefundedAmount.Should().Be(CapturedAmount);
@@ -111,7 +112,7 @@ public sealed class RefundPaymentCommandHandlerTests
             .Returns(Task.CompletedTask);
 
         await _commandHandler.Handle(
-            new RefundPaymentCommand(PaymentId, 10.00m, RefundReason), CancellationToken.None);
+            new RefundPaymentCommand(PaymentId, 10.00m, RefundReason, RefundIdempotencyKey), CancellationToken.None);
 
         observedExpectedVersions.Should().ContainSingle().Which.Should().Be(3);
     }
@@ -124,7 +125,7 @@ public sealed class RefundPaymentCommandHandlerTests
             .Returns(Array.Empty<IPaymentEvent>());
 
         var refundUnknownPayment = () => _commandHandler.Handle(
-            new RefundPaymentCommand(PaymentId, 10.00m, RefundReason), CancellationToken.None);
+            new RefundPaymentCommand(PaymentId, 10.00m, RefundReason, RefundIdempotencyKey), CancellationToken.None);
 
         return refundUnknownPayment.Should().ThrowAsync<NotFoundException>();
     }
@@ -138,7 +139,7 @@ public sealed class RefundPaymentCommandHandlerTests
             .Returns(ProviderRefundResult.Declined(ProviderRejectionReason));
 
         var refundRejectedByProvider = () => _commandHandler.Handle(
-            new RefundPaymentCommand(PaymentId, 10.00m, RefundReason), CancellationToken.None);
+            new RefundPaymentCommand(PaymentId, 10.00m, RefundReason, RefundIdempotencyKey), CancellationToken.None);
 
         (await refundRejectedByProvider.Should().ThrowAsync<BadRequestException>())
             .Which.Detail.Should().Be(ProviderRejectionReason);
@@ -152,11 +153,35 @@ public sealed class RefundPaymentCommandHandlerTests
         StreamContainsCapturedPayment();
 
         var refundTooMuch = () => _commandHandler.Handle(
-            new RefundPaymentCommand(PaymentId, CapturedAmount + 0.01m, RefundReason), CancellationToken.None);
+            new RefundPaymentCommand(PaymentId, CapturedAmount + 0.01m, RefundReason, RefundIdempotencyKey), CancellationToken.None);
 
         await refundTooMuch.Should().ThrowAsync<DomainException>();
         await _paymentProvider.DidNotReceiveWithAnyArgs().RefundAsync(default!, default, default!, default);
         _appendedBatches.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task RetriedRefundWithTheSameKeyReplaysTheRecordedOutcomeWithoutRefundingAgain()
+    {
+        _paymentEventStore
+            .LoadStreamAsync(PaymentId, Arg.Any<CancellationToken>())
+            .Returns(new IPaymentEvent[]
+            {
+                new PaymentInitiated(
+                    PaymentId, 1, RefundInstant.AddMinutes(-5), OrderId, CustomerId, CapturedAmount, CurrencyCode, CardMethod),
+                new PaymentAuthorized(PaymentId, 2, RefundInstant.AddMinutes(-4), ProviderReference),
+                new PaymentCaptured(PaymentId, 3, RefundInstant.AddMinutes(-3)),
+                new PaymentRefunded(PaymentId, 4, RefundInstant.AddMinutes(-2), 30.00m, RefundReason, RefundIdempotencyKey),
+            });
+
+        var refundResult = await _commandHandler.Handle(
+            new RefundPaymentCommand(PaymentId, 30.00m, RefundReason, RefundIdempotencyKey), CancellationToken.None);
+
+        refundResult.Status.Should().Be(PaymentStatus.PartiallyRefunded);
+        refundResult.RefundedAmount.Should().Be(30.00m);
+        await _paymentProvider.DidNotReceiveWithAnyArgs().RefundAsync(default!, default, default!, default);
+        _appendedBatches.Should().BeEmpty();
+        _projectedModels.Should().BeEmpty();
     }
 
     private void StreamContainsCapturedPayment() =>

@@ -5,4 +5,5 @@ public sealed record PaymentRefunded(
     int Version,
     DateTimeOffset OccurredOnUtc,
     decimal Amount,
-    string Reason) : IPaymentEvent;
+    string Reason,
+    string IdempotencyKey) : IPaymentEvent;

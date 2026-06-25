@@ -49,7 +49,7 @@ public sealed class MongoPaymentEventStoreTests : IDisposable
             InitiatedEvent(paymentId),
             new PaymentAuthorized(paymentId, 2, FirstEventInstant.AddSeconds(1), ProviderReference),
             new PaymentCaptured(paymentId, 3, FirstEventInstant.AddSeconds(2)),
-            new PaymentRefunded(paymentId, 4, FirstEventInstant.AddMinutes(5), 20.00m, RefundReason),
+            new PaymentRefunded(paymentId, 4, FirstEventInstant.AddMinutes(5), 20.00m, RefundReason, paymentId.ToString()),
         ];
 
         await _eventStore.AppendAsync(paymentId, expectedVersion: 0, writtenStream, CancellationToken.None);

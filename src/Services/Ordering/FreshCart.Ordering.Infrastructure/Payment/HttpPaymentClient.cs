@@ -65,8 +65,17 @@ public sealed class HttpPaymentClient(HttpClient httpClient) : IPaymentClient
 
         var payload = new PaymentRefundRequestPayload(refundRequest.Amount, refundRequest.Reason);
 
+        using var requestMessage = new HttpRequestMessage(HttpMethod.Post, refundPath)
+        {
+            Content = JsonContent.Create(payload),
+        };
+        // One order is refunded in full exactly once, so the payment id is a stable idempotency key:
+        // a retried refund (e.g. after the order's own save failed) reuses it and Payment replays the
+        // recorded outcome instead of refunding the customer a second time.
+        requestMessage.Headers.Add(IdempotencyKeyHeaderName, refundRequest.PaymentId.ToString());
+
         using var responseMessage = await httpClient
-            .PostAsJsonAsync(refundPath, payload, cancellationToken)
+            .SendAsync(requestMessage, cancellationToken)
             .ConfigureAwait(false);
 
         responseMessage.EnsureSuccessStatusCode();

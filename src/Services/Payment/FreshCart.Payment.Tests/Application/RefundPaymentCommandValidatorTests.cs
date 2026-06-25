@@ -58,8 +58,17 @@ public sealed class RefundPaymentCommandValidatorTests
         validationResult.ShouldHaveValidationErrorFor(command => command.Reason);
     }
 
+    [Fact]
+    public void EmptyIdempotencyKeyIsRejected()
+    {
+        var validationResult = _validator.TestValidate(ValidCommand() with { IdempotencyKey = string.Empty });
+
+        validationResult.ShouldHaveValidationErrorFor(command => command.IdempotencyKey);
+    }
+
     private static RefundPaymentCommand ValidCommand() => new(
         PaymentId: Guid.Parse("88888888-8888-8888-8888-888888888888"),
         Amount: 25.00m,
-        Reason: "Customer returned the goods.");
+        Reason: "Customer returned the goods.",
+        IdempotencyKey: "88888888-8888-8888-8888-888888888888");
 }

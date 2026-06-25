@@ -53,7 +53,7 @@ walkable end-to-end.
   validates via `InvoiceNumber.TryParse` and addresses the blob with the normalised `parsed.Value`,
   returning 400 on malformed input.
 - Verified: full solution builds with 0 errors; the entire test suite is green &mdash;
-  Basket 92, Catalog 155, Payment 82, Ordering 70, Delivery 56, Reviews 53, CustomerSupport 46,
+  Basket 92, Catalog 155, Payment 85, Ordering 70, Delivery 56, Reviews 53, CustomerSupport 46,
   Pricing 47, Notification 42, Identity 40, Gateway 38, BuildingBlocks 37, Reporting 42, Inventory 7.
 
 ### Reliability
@@ -107,6 +107,16 @@ walkable end-to-end.
   execution strategy, which forbids user-initiated transactions; a crash between claim and re-issue fails
   closed (forced re-authentication). Proven with an 8-way concurrent SQL Server Testcontainers test in
   which exactly one rotation succeeds.
+- **Refund flow auth and idempotency (ORD-002).** Two defects in the admin order-refund path
+  (admin &rarr; Ordering &rarr; Payment). First, the Payment refund endpoint required the `Administrator`
+  policy while Ordering calls it with the service token, so every refund failed with 403; it now requires
+  `ServiceCallerPolicy` like the capture endpoint (the administrator check is enforced at the Ordering
+  edge). Second, the refund carried no idempotency key, so an Ordering retry after its own save failed
+  (the provider had already refunded) would refund the customer a second time. The refund endpoint now
+  requires an `Idempotency-Key` header (Ordering sends the payment id, stable for its one-full-refund flow);
+  the key is recorded on the `PaymentRefunded` event and the handler replays the recorded outcome instead
+  of re-refunding when the key is already present. Proven with a handler test (retry replays without
+  touching the provider) plus aggregate and validator tests.
 
 ### Fixed
 

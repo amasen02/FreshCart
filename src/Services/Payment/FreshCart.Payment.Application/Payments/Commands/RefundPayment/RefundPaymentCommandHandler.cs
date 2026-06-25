@@ -36,7 +36,17 @@ public sealed partial class RefundPaymentCommandHandler(
         }
 
         var payment = PaymentAggregate.ReplayFrom(eventStream);
-        payment.Refund(command.Amount, command.Reason, timeProvider.GetUtcNow());
+
+        if (payment.HasRefundWithKey(command.IdempotencyKey))
+        {
+            // A retried refund (e.g. the Ordering refund flow re-sending after its own save failed).
+            // The recorded outcome is replayed without touching the provider, so the customer is never
+            // refunded twice for the same operation.
+            LogIdempotentRefundReplay(command.IdempotencyKey, payment.PaymentId, payment.OrderId, payment.Status);
+            return new RefundPaymentResult(payment.PaymentId, payment.OrderId, payment.Status, payment.RefundedAmount);
+        }
+
+        payment.Refund(command.Amount, command.Reason, command.IdempotencyKey, timeProvider.GetUtcNow());
 
         var providerReference = payment.ProviderReference
             ?? throw new InternalServerException($"Captured payment {payment.PaymentId} is missing its provider reference.");
@@ -75,4 +85,7 @@ public sealed partial class RefundPaymentCommandHandler(
 
     [LoggerMessage(EventId = 1, Level = LogLevel.Information, Message = "Refunded {Amount} {CurrencyCode} on payment {PaymentId} for order {OrderId}; status is now {Status}")]
     private partial void LogPaymentRefunded(decimal amount, string currencyCode, Guid paymentId, Guid orderId, PaymentStatus status);
+
+    [LoggerMessage(EventId = 2, Level = LogLevel.Information, Message = "Refund with idempotency key {IdempotencyKey} already applied to payment {PaymentId} for order {OrderId}; returning the recorded {Status} outcome")]
+    private partial void LogIdempotentRefundReplay(string idempotencyKey, Guid paymentId, Guid orderId, PaymentStatus status);
 }

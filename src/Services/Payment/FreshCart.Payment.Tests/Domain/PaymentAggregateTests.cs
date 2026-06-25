@@ -19,6 +19,7 @@ public sealed class PaymentAggregateTests
     private const string ProviderReference = "SIM-TEST-REFERENCE";
     private const string DeclineReason = "The card was declined by the issuing bank.";
     private const string RefundReason = "Customer returned the goods.";
+    private const string RefundKey = "11111111-1111-1111-1111-111111111111";
 
     [Fact]
     public void InitiateProducesAnInitiatedPaymentAtVersionOne()
@@ -206,7 +207,7 @@ public sealed class PaymentAggregateTests
     {
         var payment = CapturedPayment();
 
-        payment.Refund(30.00m, RefundReason, InitiationInstant.AddMinutes(1));
+        payment.Refund(30.00m, RefundReason, RefundKey, InitiationInstant.AddMinutes(1));
 
         payment.Status.Should().Be(PaymentStatus.PartiallyRefunded);
         payment.RefundedAmount.Should().Be(30.00m);
@@ -214,11 +215,21 @@ public sealed class PaymentAggregateTests
     }
 
     [Fact]
+    public void TracksAppliedRefundIdempotencyKeysSoARetryCanBeRecognised()
+    {
+        var payment = CapturedPayment();
+        payment.Refund(30.00m, RefundReason, RefundKey, InitiationInstant.AddMinutes(1));
+
+        payment.HasRefundWithKey(RefundKey).Should().BeTrue();
+        payment.HasRefundWithKey("a-different-key").Should().BeFalse();
+    }
+
+    [Fact]
     public void FullRefundMovesACapturedPaymentToRefunded()
     {
         var payment = CapturedPayment();
 
-        payment.Refund(CapturedAmount, RefundReason, InitiationInstant.AddMinutes(1));
+        payment.Refund(CapturedAmount, RefundReason, RefundKey, InitiationInstant.AddMinutes(1));
 
         payment.Status.Should().Be(PaymentStatus.Refunded);
         payment.RefundedAmount.Should().Be(CapturedAmount);
@@ -228,9 +239,9 @@ public sealed class PaymentAggregateTests
     public void SecondRefundCompletingTheAmountMovesAPartiallyRefundedPaymentToRefunded()
     {
         var payment = CapturedPayment();
-        payment.Refund(60.00m, RefundReason, InitiationInstant.AddMinutes(1));
+        payment.Refund(60.00m, RefundReason, RefundKey, InitiationInstant.AddMinutes(1));
 
-        payment.Refund(40.00m, RefundReason, InitiationInstant.AddMinutes(2));
+        payment.Refund(40.00m, RefundReason, RefundKey, InitiationInstant.AddMinutes(2));
 
         payment.Status.Should().Be(PaymentStatus.Refunded);
         payment.RefundedAmount.Should().Be(CapturedAmount);
@@ -242,7 +253,7 @@ public sealed class PaymentAggregateTests
     {
         var payment = CapturedPayment();
 
-        var refundTooMuch = () => payment.Refund(100.01m, RefundReason, InitiationInstant.AddMinutes(1));
+        var refundTooMuch = () => payment.Refund(100.01m, RefundReason, RefundKey, InitiationInstant.AddMinutes(1));
 
         refundTooMuch.Should().Throw<DomainException>()
             .WithMessage("*exceeding the captured amount*");
@@ -252,9 +263,9 @@ public sealed class PaymentAggregateTests
     public void CumulativeRefundsExceedingTheCapturedAmountAreRejected()
     {
         var payment = CapturedPayment();
-        payment.Refund(70.00m, RefundReason, InitiationInstant.AddMinutes(1));
+        payment.Refund(70.00m, RefundReason, RefundKey, InitiationInstant.AddMinutes(1));
 
-        var refundBeyondRemainder = () => payment.Refund(30.01m, RefundReason, InitiationInstant.AddMinutes(2));
+        var refundBeyondRemainder = () => payment.Refund(30.01m, RefundReason, RefundKey, InitiationInstant.AddMinutes(2));
 
         refundBeyondRemainder.Should().Throw<DomainException>()
             .WithMessage("*exceeding the captured amount*");
@@ -269,7 +280,7 @@ public sealed class PaymentAggregateTests
     {
         var payment = CapturedPayment();
 
-        var refundInvalidAmount = () => payment.Refund(invalidAmount, RefundReason, InitiationInstant.AddMinutes(1));
+        var refundInvalidAmount = () => payment.Refund(invalidAmount, RefundReason, RefundKey, InitiationInstant.AddMinutes(1));
 
         refundInvalidAmount.Should().Throw<DomainException>()
             .WithMessage("*refund amount must be positive*");
@@ -280,7 +291,7 @@ public sealed class PaymentAggregateTests
     {
         var payment = AuthorizedPayment();
 
-        var refundUncapturedPayment = () => payment.Refund(10.00m, RefundReason, InitiationInstant.AddMinutes(1));
+        var refundUncapturedPayment = () => payment.Refund(10.00m, RefundReason, RefundKey, InitiationInstant.AddMinutes(1));
 
         refundUncapturedPayment.Should().Throw<DomainException>()
             .WithMessage("*Only a captured payment can be refunded*Authorized*");
@@ -291,7 +302,7 @@ public sealed class PaymentAggregateTests
     {
         var payment = DeclinedPayment();
 
-        var refundDeclinedPayment = () => payment.Refund(10.00m, RefundReason, InitiationInstant.AddMinutes(1));
+        var refundDeclinedPayment = () => payment.Refund(10.00m, RefundReason, RefundKey, InitiationInstant.AddMinutes(1));
 
         refundDeclinedPayment.Should().Throw<DomainException>()
             .WithMessage("*Only a captured payment can be refunded*Declined*");
@@ -301,7 +312,7 @@ public sealed class PaymentAggregateTests
     public void ReplayFromTheStoredEventStreamYieldsIdenticalState()
     {
         var livePayment = CapturedPayment();
-        livePayment.Refund(25.00m, RefundReason, InitiationInstant.AddMinutes(1));
+        livePayment.Refund(25.00m, RefundReason, RefundKey, InitiationInstant.AddMinutes(1));
         var eventStream = livePayment.DequeueUncommittedEvents();
 
         var replayedPayment = PaymentAggregate.ReplayFrom(eventStream);

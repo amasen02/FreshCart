@@ -17,6 +17,8 @@ public sealed class PaymentAggregate
 
     private readonly List<IPaymentEvent> _uncommittedEvents = [];
 
+    private readonly HashSet<string> _appliedRefundKeys = new(StringComparer.Ordinal);
+
     private PaymentAggregate()
     {
     }
@@ -140,9 +142,13 @@ public sealed class PaymentAggregate
         RaiseEvent(new PaymentDeclined(PaymentId, Version + 1, occurredOnUtc, reason));
     }
 
-    public void Refund(decimal amount, string reason, DateTimeOffset occurredOnUtc)
+    public bool HasRefundWithKey(string idempotencyKey) =>
+        !string.IsNullOrEmpty(idempotencyKey) && _appliedRefundKeys.Contains(idempotencyKey);
+
+    public void Refund(decimal amount, string reason, string idempotencyKey, DateTimeOffset occurredOnUtc)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(reason);
+        ArgumentException.ThrowIfNullOrWhiteSpace(idempotencyKey);
 
         if (Status is not (PaymentStatus.Captured or PaymentStatus.PartiallyRefunded))
         {
@@ -162,7 +168,7 @@ public sealed class PaymentAggregate
                 $"Refunding {amount} would bring cumulative refunds to {RefundedAmount + amount}, exceeding the captured amount of {Amount}."));
         }
 
-        RaiseEvent(new PaymentRefunded(PaymentId, Version + 1, occurredOnUtc, amount, reason));
+        RaiseEvent(new PaymentRefunded(PaymentId, Version + 1, occurredOnUtc, amount, reason, idempotencyKey));
     }
 
     public IReadOnlyList<IPaymentEvent> DequeueUncommittedEvents()
@@ -219,6 +225,11 @@ public sealed class PaymentAggregate
                 Status = RefundedAmount >= Amount
                     ? PaymentStatus.Refunded
                     : PaymentStatus.PartiallyRefunded;
+                if (!string.IsNullOrEmpty(refunded.IdempotencyKey))
+                {
+                    _appliedRefundKeys.Add(refunded.IdempotencyKey);
+                }
+
                 break;
 
             default:
