@@ -28,6 +28,9 @@ to run in any other environment.
 ### Boot the platform
 
 ```bash
+# 0. Clone
+git clone https://github.com/amasen02/FreshCart.git && cd FreshCart
+
 # 1. Backing services (SQL Server, Postgres, MySQL, MongoDB, Redis, RabbitMQ, Seq, Grafana, Prometheus)
 docker compose -f deploy/docker/docker-compose.yaml up -d
 
@@ -173,6 +176,37 @@ See [`index.html`](index.html) &rarr; *Reporting & Invoices* tab for the full su
 
 Full OWASP Top-10 2025 mapping in
 [`docs/adr/ADR-0004-owasp-top-10-control-mapping.md`](docs/adr/ADR-0004-owasp-top-10-control-mapping.md).
+
+---
+
+## Reliability &amp; correctness &mdash; proven, not claimed
+
+The hard parts of a distributed system are the races. Each guarantee below is backed by a
+real-database concurrency test (Testcontainers spins up the actual engine and fires N parallel
+callers) rather than asserted in prose:
+
+- **Exactly-once read projections (Reporting).** The idempotency record commits in the *same*
+  transaction as the projection, so an at-least-once redelivery can never double-count an additive
+  aggregate (refund totals, customer lifetime value). *Proven by a redelivery test and a 12-way
+  concurrent MySQL test.* (REP-001)
+- **No oversubscribed delivery slots.** Booking is a single conditional increment guarded by
+  `BookedCount < Capacity`; the loser of a race is redelivered and re-scheduled against the
+  remaining slots. *Proven by a 20-way concurrent MongoDB test.* (DLV-001)
+- **Gap-free, collision-free invoice numbers.** Allocation is one atomic upsert
+  (`INSERT … ON DUPLICATE KEY UPDATE … LAST_INSERT_ID`), never a read-then-write. *Proven by a
+  25-way concurrent MySQL test yielding exactly `{1..25}`.* (REP-002)
+- **Single-use refresh tokens.** Rotation is claimed with one conditional `UPDATE`; a concurrent
+  reuse is treated as a stolen-token replay and revokes the whole token family. *Proven by an
+  8-way concurrent SQL Server test.* (ID-COR-01)
+- **Idempotent payment refunds.** The refund carries an idempotency key recorded on the
+  `PaymentRefunded` event, so a retried refund replays the recorded outcome instead of charging the
+  customer twice. (ORD-002)
+- **Durable event contracts.** Outboxed events resolve by their version-independent type name, so a
+  deployment that bumps an assembly version never dead-letters an in-flight event. (BB-002)
+
+Every item traces to an audit finding; the fixes and their verification are recorded in
+[`CHANGELOG.md`](CHANGELOG.md), and the originating review is
+[`docs/google-standards-audit-2026-06-23.md`](docs/google-standards-audit-2026-06-23.md).
 
 ---
 
