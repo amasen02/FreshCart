@@ -1,4 +1,5 @@
 using Carter;
+using FreshCart.BuildingBlocks.Exceptions;
 using FreshCart.Reporting.Api.Authentication;
 using FreshCart.Reporting.Application.Common.Abstractions;
 using FreshCart.Reporting.Application.Invoices.Commands.GenerateInvoice;
@@ -28,14 +29,20 @@ public sealed class InvoiceEndpoints : ICarterModule
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status400BadRequest);
 
+        // Invoices carry customer PII and are numbered gap-free (trivially enumerable), so both read
+        // routes require the back-office role rather than just any authenticated session (closing the
+        // BOLA the bare group-level RequireAuthorization left open).
         invoicesGroup.MapGet("/{invoiceNumber}", GetSignedUrlAsync)
+            .RequireAuthorization(AuthorizationPolicies.BackOfficeUser)
             .WithSummary("Return a short-lived signed URL the caller can use to download the invoice PDF.")
             .Produces<DownloadInvoiceResult>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status404NotFound);
 
         invoicesGroup.MapGet("/{invoiceNumber}/content.pdf", StreamPdfAsync)
+            .RequireAuthorization(AuthorizationPolicies.BackOfficeUser)
             .WithSummary("Stream the invoice PDF directly (used by the SPA when a SAS URL is not desired).")
             .Produces<FileStreamHttpResult>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status404NotFound);
     }
 
@@ -81,13 +88,19 @@ public sealed class InvoiceEndpoints : ICarterModule
         IDocumentStore documentStore,
         CancellationToken cancellationToken)
     {
+        // Validate before the value reaches the blob path: TryParse only accepts the canonical
+        // INV/CR/PF-YYYY-NNNNNN shape, which rejects path-traversal input, and the normalised
+        // parsed.Value (never the raw route string) is what addresses the blob.
+        if (!InvoiceNumber.TryParse(invoiceNumber, out var parsedInvoiceNumber))
+        {
+            throw new BadRequestException($"\"{invoiceNumber}\" is not a valid invoice number.");
+        }
+
+        var blobName = $"{parsedInvoiceNumber.Value}.pdf";
         var contentStream = await documentStore
-            .OpenReadAsync("invoices", $"{invoiceNumber}.pdf", cancellationToken)
+            .OpenReadAsync("invoices", blobName, cancellationToken)
             .ConfigureAwait(false);
 
-        return Results.Stream(
-            contentStream,
-            contentType: "application/pdf",
-            fileDownloadName: $"{invoiceNumber}.pdf");
+        return Results.Stream(contentStream, contentType: "application/pdf", fileDownloadName: blobName);
     }
 }
