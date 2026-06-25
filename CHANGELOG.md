@@ -45,9 +45,16 @@ walkable end-to-end.
   skipping bearer / service callers that carry no ambient cookie and are not CSRF-exposed. The validator is
   safe-method-aware (read endpoints are unaffected) and is enforced on sign-out and on the MFA
   enroll/verify/disable mutations via a group endpoint filter (ID-SEC-01).
+- **Invoice-download BOLA and path traversal (REP-005).** The two invoice GET routes
+  (`/invoices/{invoiceNumber}` and `.../content.pdf`) carried only the group-level `RequireAuthorization`,
+  so any authenticated customer could enumerate the gap-free invoice numbers and download other customers'
+  invoice PDFs (names, addresses, line items). Both now require the `BackOfficeUser` role like every other
+  reporting route. `StreamPdfAsync` also passed the raw route value straight into the blob path; it now
+  validates via `InvoiceNumber.TryParse` and addresses the blob with the normalised `parsed.Value`,
+  returning 400 on malformed input.
 - Verified: full solution builds with 0 errors; the entire test suite is green &mdash;
-  Basket 92, Catalog 155, Payment 82, Ordering 70, Delivery 54, Reviews 53, CustomerSupport 46,
-  Pricing 47, Notification 42, Identity 38, Gateway 38, BuildingBlocks 37, Reporting 36, Inventory 7.
+  Basket 92, Catalog 155, Payment 82, Ordering 70, Delivery 56, Reviews 53, CustomerSupport 46,
+  Pricing 47, Notification 42, Identity 38, Gateway 38, BuildingBlocks 37, Reporting 42, Inventory 7.
 
 ### Reliability
 
@@ -68,6 +75,28 @@ walkable end-to-end.
   wiped real stock movement. New `IStockRepository.EnsureExistsAsync` (atomic insert-if-absent via
   `MERGE ... WHEN NOT MATCHED`) and `IStockLevelService.EnsureStockItemAsync` seed the row only on first
   sight; the consumer now uses them, and the destructive `SetStockLevel` is reserved for the admin PUT.
+- **Atomic delivery-slot booking (DLV-001).** `ScheduleDeliveryService` listed a slot, incremented its
+  booked count in memory, then persisted it with an unconditional `Set` filtered only by id, so two
+  `OrderConfirmed` consumers that both read a slot at 4/5 each wrote 5 &mdash; oversubscribing the fleet.
+  `ISlotRepository.UpdateBookingAsync` becomes `TryBookSlotAsync`, a single `UpdateOne` with
+  `Inc(BookedCount, 1)` filtered by `id AND BookedCount < Capacity`; exactly one racing scheduler gets
+  `ModifiedCount == 1`. The booking now precedes creating the delivery, and a lost race throws the
+  retriable `SlotNoLongerAvailableException` so the MassTransit retry re-schedules against the remaining
+  open slots. Proven with a 20-way concurrent Testcontainers test.
+- **Exactly-once warehouse projections (REP-001).** The reporting projection consumers checked an EF
+  inbox, applied a Dapper projection, then recorded the inbox &mdash; three steps across two connections.
+  A crash between the apply and the record re-applied the event on redelivery, and both the refund total
+  and the customer lifetime value are additive, so the redelivery silently double-counted. The inbox
+  record now shares the projection's Dapper transaction: `WarehouseProjectionWriter` inserts the
+  `projection_inbox` row first as a primary-key latch, applies the projection, and commits atomically; a
+  duplicate key means already-processed (returns `false`). The standalone `IProjectionInbox` is removed.
+  Proven with MySQL Testcontainers tests for redelivery and 12-way concurrent delivery.
+- **Atomic invoice-number allocation (REP-002).** `AllocateNextNumberAsync` claimed a `FOR UPDATE` lock
+  but did a plain EF read-increment-save with no concurrency token, so concurrent invoice generation
+  handed two invoices the same number. It is now a single atomic upsert
+  (`INSERT ... ON DUPLICATE KEY UPDATE LastSequence = LAST_INSERT_ID(LastSequence + 1)`) read back via the
+  session-scoped `LAST_INSERT_ID()`. Proven with a 25-way concurrent Testcontainers test yielding exactly
+  `{1..25}`.
 
 ### Fixed
 
@@ -78,6 +107,16 @@ walkable end-to-end.
   profile sets the dashboard URLs, OTLP endpoints and `ASPNETCORE_ENVIRONMENT=Development`. Two further
   live-boot blockers (Aspire persistent-container password drift; databases not provisioned on fresh
   volumes) are documented with the required fix in `docs/google-standards-audit-2026-06-23.md` §7.
+- **The full stack now cold-boots and the customer-journey E2E passes against the live system (audit §7).**
+  Implemented the §7 recipe &mdash; stable AppHost parameter passwords in `appsettings.Development.json`,
+  Postgres database creation via Marten `CreateDatabasesForTenants` (Catalog, Basket), and
+  `EnableRetryOnFailure` on the Identity and Payment DbContexts &mdash; and fixed the latent integration
+  bugs only a live boot exposes: the gateway JWT role-claim type (`ClaimTypes.Role`), dev-cert trust on
+  service-to-service HTTP and gRPC channels, Pricing gRPC `[AllowAnonymous]`, the sign-up cookie missing
+  its roles, the Payment capture/refund DTO field/shape mismatches, and the Payment read-model
+  cross-column CHECK. The Playwright `customer-journey` spec now runs green end-to-end against
+  `dotnet run` AppHost + `ng serve`, and a real order reaches `Confirmed`
+  (Submitted &rarr; StockReserved &rarr; Confirmed) through the MassTransit saga.
 
 ### Planned &mdash; future phases
 
