@@ -48,7 +48,17 @@ bld/
 coverage/
 *.coverage
 *.coveragexml
+*.cobertura.xml
 TestResults/
+# Playwright (E2E)
+playwright-report/
+playwright/.cache/
+
+# CI / build logs / analyzers
+*.binlog
+msbuild.log
+.sonarqube/
+BenchmarkDotNet.Artifacts/
 
 # Tooling
 .idea/
