@@ -31,7 +31,7 @@ to run in any other environment.
 
 ```bash
 # 0. Clone
-git clone https://github.com/amasen02/FreshCart.git && cd FreshCart
+git clone https://github.com/amasen02/freshcart-backend.git && cd freshcart-backend
 
 # 1. Backing services (SQL Server, Postgres, MySQL, MongoDB, Redis, RabbitMQ, Seq, Grafana, Prometheus)
 docker compose -f deploy/docker/docker-compose.yaml up -d

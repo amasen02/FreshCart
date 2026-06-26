@@ -32,7 +32,7 @@
     <Authors>Ama Senevirathne</Authors>
     <Company>FreshCart</Company>
     <Product>FreshCart Online Supermarket</Product>
-    <RepositoryUrl>https://github.com/amasen02/FreshCart</RepositoryUrl>
+    <RepositoryUrl>https://github.com/amasen02/freshcart-backend</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
 
     <Deterministic>true</Deterministic>

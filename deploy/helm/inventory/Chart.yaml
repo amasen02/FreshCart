@@ -8,9 +8,9 @@ version: 0.1.0
 
 appVersion: '0.1.0'
 
-home: https://github.com/amasen02/FreshCart
+home: https://github.com/amasen02/freshcart-backend
 sources:
-  - https://github.com/amasen02/FreshCart
+  - https://github.com/amasen02/freshcart-backend
 
 maintainers:
   - name: Ama Senevirathne
