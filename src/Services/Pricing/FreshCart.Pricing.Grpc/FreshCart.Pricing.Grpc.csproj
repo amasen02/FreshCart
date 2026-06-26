@@ -8,7 +8,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Protobuf Include="Protos\pricing.proto" GrpcServices="Server" />
+    <!-- Server for the hosted service; the client stub is also generated so integration tests (and any
+         in-process consumer) can call the gRPC surface through the same strongly-typed contract. -->
+    <Protobuf Include="Protos\pricing.proto" GrpcServices="Both" />
   </ItemGroup>
 
   <ItemGroup>
