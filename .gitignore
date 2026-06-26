@@ -66,6 +66,14 @@ BenchmarkDotNet.Artifacts/
 .DS_Store
 Thumbs.db
 
+# Scratch / one-off scaffolding files (never commit generators or temp output)
+.tmp_*
+*.tmp
+*.tmp.*
+*.bak
+*.orig
+scratch/
+
 # Local user secrets
 *.userdb
 secrets.json
