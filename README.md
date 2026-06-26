@@ -5,7 +5,7 @@
 > interview tour, all in one self-contained document.
 
 [![.NET](https://img.shields.io/badge/.NET-10-blueviolet)](https://dotnet.microsoft.com/)
-[![Angular](https://img.shields.io/badge/Angular-20-red)](https://angular.dev/)
+[![Frontend: Angular 20](https://img.shields.io/badge/frontend-Angular%2020-red)](https://github.com/amasen02/freshcart-web)
 [![Aspire](https://img.shields.io/badge/Aspire-13-blue)](https://learn.microsoft.com/en-us/dotnet/aspire/)
 [![Azure](https://img.shields.io/badge/Azure-AKS-0078d4)](https://azure.microsoft.com/en-us/products/kubernetes-service)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
@@ -99,8 +99,10 @@ The candidate's CV lists eleven years of work across .NET, Angular, Azure, AWS, 
 SignalR, RabbitMQ, microservices, DDD, CQRS, Event Sourcing, Saga, polyglot persistence,
 EF Core + Dapper hybrid, SonarQube, Prometheus + Grafana, AKS, EKS, Azure DevOps CI/CD.
 
-A long list of skills is unfalsifiable. This repository is the **falsifiable evidence** &mdash;
-every claim anchored to running code, an ADR, and a walkthrough card.
+A long list of skills is unfalsifiable. This repository is the **falsifiable evidence** for the
+backend &mdash; every claim anchored to running code, an ADR, and a walkthrough card. The Angular
+front-end evidence lives in the companion repo
+[freshcart-web](https://github.com/amasen02/freshcart-web).
 
 ---
 
@@ -121,14 +123,18 @@ every claim anchored to running code, an ADR, and a walkthrough card.
 | 11 | **Reviews** | Vertical Slice + Document DB | MongoDB | Built |
 | 12 | **Reporting** | CQRS read model + QuestPDF | MySQL warehouse + Blob Storage | Built |
 
-Edge and client:
+Edge and clients:
 
 | Surface | Technology | Status |
 |---|---|---|
 | **YARP API Gateway** | .NET 10 + YARP; cookie-to-JWT BFF exchange | Built |
-| **Customer SPA** | Angular 20 standalone + signals + Bootstrap 5 | Built |
 | **AdminBackoffice** | Modular monolith (`IModule` pattern) | Planned |
-| **Admin SPA** | Angular 20 standalone + signals + Bootstrap 5 | Planned |
+| **Customer SPA** | Angular 20 standalone + signals + Bootstrap 5 | Built &mdash; separate repo: [freshcart-web](https://github.com/amasen02/freshcart-web) |
+| **Admin SPA** | Angular 20 standalone + signals + Bootstrap 5 | Planned &mdash; will live in [freshcart-web](https://github.com/amasen02/freshcart-web) |
+
+The browser clients live in the companion frontend repository
+[**amasen02/freshcart-web**](https://github.com/amasen02/freshcart-web); this repository is the
+backend platform they reach through the gateway.
 
 `BuildingBlocks` carries the cross-cutting libraries: `BuildingBlocks` (CQRS, behaviors,
 exception handling, pagination, security), `BuildingBlocks.Messaging` (integration event
@@ -252,7 +258,7 @@ Every item traces to an audit finding; the fixes and their verification are reco
 ## Repository layout
 
 ```
-FreshCart/
+freshcart-backend/
 ├── index.html                  ← LANDING PAGE — open this first
 ├── README.md                   ← this file
 ├── ARCHITECTURE.md             ← C4 narrative (C1 + C2 + C3)
@@ -287,9 +293,10 @@ FreshCart/
 - **Unit + integration.** xUnit + FluentAssertions + NSubstitute + Testcontainers (real SQL
   Server / Postgres / MongoDB / Redis / RabbitMQ in Docker).
 - **End-to-end.** Playwright &mdash; three browser projects (Chromium / Firefox / WebKit) +
-  mobile viewport. Tests under [`tests/e2e/specs/`](tests/e2e/specs/) cover the cookie
-  sign-in flow and the full customer happy path; the admin reporting dashboard spec is skipped
-  until the admin SPA ships.
+  mobile viewport. Tests under [`tests/e2e/specs/`](tests/e2e/specs/) drive the storefront from
+  [freshcart-web](https://github.com/amasen02/freshcart-web) and cover the cookie sign-in flow and
+  the full customer happy path; the admin reporting dashboard spec is skipped until the admin SPA
+  ships.
 - **Contract / load.** Pact (provider verification) and k6 are planned phases
   (see [`CHANGELOG.md`](CHANGELOG.md)).
 - **Static.** SonarCloud + Trivy + CodeQL + `dotnet list package --vulnerable` &mdash; all
